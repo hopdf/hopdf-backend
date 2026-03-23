@@ -2,5 +2,5 @@ services:
   - type: web
     name: hopdf-backend
     env: python
-    buildCommand: apt-get install -y libreoffice && pip install -r requirements.txt
+    buildCommand: apt-get update && apt-get install -y libreoffice libreoffice-writer libreoffice-calc libreoffice-impress && pip install -r requirements.txt
     startCommand: gunicorn app:app
