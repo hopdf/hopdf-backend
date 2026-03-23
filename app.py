@@ -7,6 +7,7 @@ from datetime import datetime
 import threading
 import time
 import traceback
+import subprocess
 
 app = Flask(__name__)
 CORS(app)
@@ -28,59 +29,45 @@ def dosyayi_sil(path, gecikme=300):
 def benzersiz_dosya(uzanti):
     return os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4()}{uzanti}")
 
+def libreoffice_donustur(giris, cikis_format, cikis_uzanti):
+    """LibreOffice ile herhangi bir dosyayı dönüştür"""
+    cikis_klasor = os.path.dirname(giris)
+    result = subprocess.run([
+        'libreoffice', '--headless', '--convert-to', cikis_format,
+        '--outdir', cikis_klasor, giris
+    ], capture_output=True, text=True, timeout=120)
+    
+    # LibreOffice çıktı dosyasını bul
+    giris_adi = os.path.splitext(giris)[0]
+    cikis = giris_adi + cikis_uzanti
+    
+    if os.path.exists(cikis):
+        return cikis
+    
+    raise Exception(f'LibreOffice hatası: {result.stderr}')
+
+# ── Word → PDF ──────────────────────────────────────────────
 @app.route('/api/word2pdf', methods=['POST'])
 def word2pdf():
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'Dosya bulunamadı'}), 400
-        
         dosya = request.files['file']
-        giris = benzersiz_dosya('.docx')
-        cikis = benzersiz_dosya('.pdf')
+        uzanti = '.docx' if dosya.filename.endswith('.docx') else '.doc'
+        giris = benzersiz_dosya(uzanti)
         dosya.save(giris)
         
-        # Önce docx2pdf dene
-        try:
-            from docx2pdf import convert
-            convert(giris, cikis)
-            if os.path.exists(cikis):
-                return send_file(cikis, as_attachment=True,
-                    download_name=dosya.filename.replace('.docx','.pdf'),
-                    mimetype='application/pdf')
-        except Exception as e1:
-            app.logger.error(f'docx2pdf hatası: {str(e1)}')
-        
-        # Sonra python-docx + reportlab dene
-        try:
-            from docx import Document
-            from reportlab.pdfgen import canvas
-            from reportlab.lib.pagesizes import A4
-            
-            doc = Document(giris)
-            c = canvas.Canvas(cikis, pagesize=A4)
-            width, height = A4
-            y = height - 50
-            
-            for para in doc.paragraphs:
-                if y < 50:
-                    c.showPage()
-                    y = height - 50
-                c.drawString(50, y, para.text[:100] if para.text else '')
-                y -= 20
-            
-            c.save()
-            if os.path.exists(cikis):
-                return send_file(cikis, as_attachment=True,
-                    download_name=dosya.filename.replace('.docx','.pdf'),
-                    mimetype='application/pdf')
-        except Exception as e2:
-            app.logger.error(f'reportlab hatası: {str(e2)}')
-            return jsonify({'error': f'docx2pdf: {str(e1)}, reportlab: {str(e2)}'}), 500
-            
+        cikis = libreoffice_donustur(giris, 'pdf', '.pdf')
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True,
+                        download_name=dosya.filename.rsplit('.',1)[0]+'.pdf',
+                        mimetype='application/pdf')
     except Exception as e:
-        app.logger.error(f'Genel hata: {traceback.format_exc()}')
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
+# ── PDF → Word ──────────────────────────────────────────────
 @app.route('/api/pdf2word', methods=['POST'])
 def pdf2word():
     try:
@@ -97,11 +84,51 @@ def pdf2word():
         dosyayi_sil(giris)
         dosyayi_sil(cikis)
         return send_file(cikis, as_attachment=True,
-                        download_name=dosya.filename.replace('.pdf','.docx'),
+                        download_name=dosya.filename.rsplit('.',1)[0]+'.docx',
                         mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
     except Exception as e:
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
+# ── Excel → PDF ──────────────────────────────────────────────
+@app.route('/api/excel2pdf', methods=['POST'])
+def excel2pdf():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        uzanti = '.xlsx' if dosya.filename.endswith('.xlsx') else '.xls'
+        giris = benzersiz_dosya(uzanti)
+        dosya.save(giris)
+        cikis = libreoffice_donustur(giris, 'pdf', '.pdf')
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True,
+                        download_name=dosya.filename.rsplit('.',1)[0]+'.pdf',
+                        mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ── PowerPoint → PDF ─────────────────────────────────────────
+@app.route('/api/ppt2pdf', methods=['POST'])
+def ppt2pdf():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        uzanti = '.pptx' if dosya.filename.endswith('.pptx') else '.ppt'
+        giris = benzersiz_dosya(uzanti)
+        dosya.save(giris)
+        cikis = libreoffice_donustur(giris, 'pdf', '.pdf')
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True,
+                        download_name=dosya.filename.rsplit('.',1)[0]+'.pdf',
+                        mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ── PDF Birleştir ────────────────────────────────────────────
 @app.route('/api/merge', methods=['POST'])
 def merge():
     try:
@@ -126,6 +153,7 @@ def merge():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── PDF Sıkıştır ─────────────────────────────────────────────
 @app.route('/api/compress', methods=['POST'])
 def compress():
     try:
@@ -149,6 +177,7 @@ def compress():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── PDF → JPG ────────────────────────────────────────────────
 @app.route('/api/pdf2jpg', methods=['POST'])
 def pdf2jpg():
     try:
@@ -173,6 +202,7 @@ def pdf2jpg():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── JPG → PDF ────────────────────────────────────────────────
 @app.route('/api/jpg2pdf', methods=['POST'])
 def jpg2pdf():
     try:
@@ -188,11 +218,12 @@ def jpg2pdf():
         dosyayi_sil(giris)
         dosyayi_sil(cikis)
         return send_file(cikis, as_attachment=True,
-                        download_name=dosya.filename.replace('.jpg','.pdf').replace('.png','.pdf'),
+                        download_name=dosya.filename.rsplit('.',1)[0]+'.pdf',
                         mimetype='application/pdf')
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── PDF Böl ──────────────────────────────────────────────────
 @app.route('/api/split', methods=['POST'])
 def split():
     try:
@@ -220,6 +251,7 @@ def split():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── PDF Döndür ───────────────────────────────────────────────
 @app.route('/api/rotate', methods=['POST'])
 def rotate():
     try:
@@ -244,26 +276,17 @@ def rotate():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── Sağlık Kontrolü ─────────────────────────────────────────
 @app.route('/api/health', methods=['GET'])
 def health():
-    # Kütüphane durumlarını kontrol et
     durum = {'status': 'ok', 'site': 'hopdf.com', 'zaman': str(datetime.now())}
+    # LibreOffice kurulu mu?
     try:
-        from docx2pdf import convert
-        durum['docx2pdf'] = 'ok'
+        result = subprocess.run(['libreoffice', '--version'], capture_output=True, text=True, timeout=10)
+        durum['libreoffice'] = result.stdout.strip()
     except Exception as e:
-        durum['docx2pdf'] = str(e)
-    try:
-        from pdf2docx import Converter
-        durum['pdf2docx'] = 'ok'
-    except Exception as e:
-        durum['pdf2docx'] = str(e)
-    try:
-        from reportlab.pdfgen import canvas
-        durum['reportlab'] = 'ok'
-    except Exception as e:
-        durum['reportlab'] = str(e)
+        durum['libreoffice'] = f'YOK: {str(e)}'
     return jsonify(durum)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)
