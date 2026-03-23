@@ -13,7 +13,6 @@ CORS(app)
 UPLOAD_FOLDER = tempfile.gettempdir()
 
 def dosyayi_sil(path, gecikme=300):
-    """Dosyayı belirtilen süre sonra sil (varsayılan 5 dakika)"""
     def sil():
         time.sleep(gecikme)
         try:
@@ -40,13 +39,25 @@ def word2pdf():
         cikis = benzersiz_dosya('.pdf')
         dosya.save(giris)
         
-        from docx2pdf import convert
-        convert(giris, cikis)
+        # LibreOffice ile dönüştür
+        import subprocess
+        result = subprocess.run([
+            'libreoffice', '--headless', '--convert-to', 'pdf',
+            '--outdir', os.path.dirname(cikis), giris
+        ], capture_output=True, text=True, timeout=60)
+        
+        # LibreOffice çıktı dosyasını bul
+        pdf_path = giris.replace('.docx', '.pdf')
+        if not os.path.exists(pdf_path):
+            pdf_path = giris.replace('.doc', '.pdf')
+        
+        if not os.path.exists(pdf_path):
+            return jsonify({'error': 'Dönüştürme başarısız: ' + result.stderr}), 500
         
         dosyayi_sil(giris)
-        dosyayi_sil(cikis)
+        dosyayi_sil(pdf_path)
         
-        return send_file(cikis, as_attachment=True,
+        return send_file(pdf_path, as_attachment=True,
                         download_name=dosya.filename.replace('.docx', '.pdf').replace('.doc', '.pdf'),
                         mimetype='application/pdf')
     except Exception as e:
@@ -265,6 +276,69 @@ def rotate():
         
         return send_file(cikis, as_attachment=True,
                         download_name='dondurul­mus.pdf',
+                        mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ── Excel → PDF ──────────────────────────────────────────────
+@app.route('/api/excel2pdf', methods=['POST'])
+def excel2pdf():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        
+        dosya = request.files['file']
+        giris = benzersiz_dosya('.xlsx')
+        cikis = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+        
+        import subprocess
+        result = subprocess.run([
+            'libreoffice', '--headless', '--convert-to', 'pdf',
+            '--outdir', os.path.dirname(cikis), giris
+        ], capture_output=True, text=True, timeout=60)
+        
+        pdf_path = giris.replace('.xlsx', '.pdf').replace('.xls', '.pdf')
+        
+        if not os.path.exists(pdf_path):
+            return jsonify({'error': 'Dönüştürme başarısız'}), 500
+        
+        dosyayi_sil(giris)
+        dosyayi_sil(pdf_path)
+        
+        return send_file(pdf_path, as_attachment=True,
+                        download_name=dosya.filename.replace('.xlsx', '.pdf'),
+                        mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ── PowerPoint → PDF ─────────────────────────────────────────
+@app.route('/api/ppt2pdf', methods=['POST'])
+def ppt2pdf():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        
+        dosya = request.files['file']
+        giris = benzersiz_dosya('.pptx')
+        dosya.save(giris)
+        
+        import subprocess
+        result = subprocess.run([
+            'libreoffice', '--headless', '--convert-to', 'pdf',
+            '--outdir', os.path.dirname(giris), giris
+        ], capture_output=True, text=True, timeout=60)
+        
+        pdf_path = giris.replace('.pptx', '.pdf').replace('.ppt', '.pdf')
+        
+        if not os.path.exists(pdf_path):
+            return jsonify({'error': 'Dönüştürme başarısız'}), 500
+        
+        dosyayi_sil(giris)
+        dosyayi_sil(pdf_path)
+        
+        return send_file(pdf_path, as_attachment=True,
+                        download_name=dosya.filename.replace('.pptx', '.pdf'),
                         mimetype='application/pdf')
     except Exception as e:
         return jsonify({'error': str(e)}), 500
