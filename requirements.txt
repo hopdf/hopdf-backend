@@ -1,0 +1,7 @@
+flask==3.0.0
+flask-cors==4.0.0
+pdf2docx==1.1.0
+docx2pdf==0.1.8
+PyPDF2==3.0.1
+Pillow==10.0.0
+pdf2image==1.16.3
