@@ -276,6 +276,137 @@ def rotate():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── Filigran Ekle ───────────────────────────────────────────
+@app.route('/api/watermark', methods=['POST'])
+def watermark():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        metin = request.form.get('metin', 'HoPDF')
+        giris = benzersiz_dosya('.pdf')
+        cikis = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+        from PyPDF2 import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        import io
+        reader = PdfReader(giris)
+        writer = PdfWriter()
+        for sayfa in reader.pages:
+            packet = io.BytesIO()
+            c = canvas.Canvas(packet, pagesize=A4)
+            c.setFont("Helvetica", 40)
+            c.setFillColorRGB(0.7, 0.7, 0.7, alpha=0.3)
+            c.saveState()
+            c.translate(300, 400)
+            c.rotate(45)
+            c.drawCentredString(0, 0, metin)
+            c.restoreState()
+            c.save()
+            packet.seek(0)
+            from PyPDF2 import PdfReader as PR
+            filigran = PR(packet).pages[0]
+            sayfa.merge_page(filigran)
+            writer.add_page(sayfa)
+        with open(cikis, 'wb') as f:
+            writer.write(f)
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True, download_name='filigranli.pdf', mimetype='application/pdf')
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+# ── PDF Şifrele ──────────────────────────────────────────────
+@app.route('/api/encrypt', methods=['POST'])
+def encrypt():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        sifre = request.form.get('sifre', '1234')
+        giris = benzersiz_dosya('.pdf')
+        cikis = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+        from PyPDF2 import PdfReader, PdfWriter
+        reader = PdfReader(giris)
+        writer = PdfWriter()
+        for sayfa in reader.pages:
+            writer.add_page(sayfa)
+        writer.encrypt(sifre)
+        with open(cikis, 'wb') as f:
+            writer.write(f)
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True, download_name='sifreli.pdf', mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ── Şifre Kaldır ─────────────────────────────────────────────
+@app.route('/api/decrypt', methods=['POST'])
+def decrypt():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        sifre = request.form.get('sifre', '')
+        giris = benzersiz_dosya('.pdf')
+        cikis = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+        from PyPDF2 import PdfReader, PdfWriter
+        reader = PdfReader(giris)
+        if reader.is_encrypted:
+            reader.decrypt(sifre)
+        writer = PdfWriter()
+        for sayfa in reader.pages:
+            writer.add_page(sayfa)
+        with open(cikis, 'wb') as f:
+            writer.write(f)
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True, download_name='sifresiz.pdf', mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ── Sayfa Numarası ───────────────────────────────────────────
+@app.route('/api/pagenumber', methods=['POST'])
+def pagenumber():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        giris = benzersiz_dosya('.pdf')
+        cikis = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+        from PyPDF2 import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        import io
+        reader = PdfReader(giris)
+        writer = PdfWriter()
+        for i, sayfa in enumerate(reader.pages):
+            packet = io.BytesIO()
+            w = float(sayfa.mediabox.width)
+            h = float(sayfa.mediabox.height)
+            c = canvas.Canvas(packet, pagesize=(w, h))
+            c.setFont("Helvetica", 10)
+            c.setFillColorRGB(0.3, 0.3, 0.3)
+            c.drawCentredString(w/2, 20, str(i+1))
+            c.save()
+            packet.seek(0)
+            from PyPDF2 import PdfReader as PR
+            numara = PR(packet).pages[0]
+            sayfa.merge_page(numara)
+            writer.add_page(sayfa)
+        with open(cikis, 'wb') as f:
+            writer.write(f)
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True, download_name='numarali.pdf', mimetype='application/pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ── Sağlık Kontrolü ─────────────────────────────────────────
 @app.route('/api/health', methods=['GET'])
 def health():
