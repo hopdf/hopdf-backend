@@ -32,10 +32,19 @@ def benzersiz_dosya(uzanti):
 def libreoffice_donustur(giris, cikis_format, cikis_uzanti):
     """LibreOffice ile herhangi bir dosyayı dönüştür"""
     cikis_klasor = os.path.dirname(giris)
+    
+    env = os.environ.copy()
+    env['HOME'] = '/tmp'
+    env['PYTHONPATH'] = ''
+    
     result = subprocess.run([
-        'libreoffice', '--headless', '--convert-to', cikis_format,
+        'libreoffice', '--headless', '--norestore', '--nofirststartwizard',
+        '--convert-to', cikis_format,
         '--outdir', cikis_klasor, giris
-    ], capture_output=True, text=True, timeout=120)
+    ], capture_output=True, text=True, timeout=120, env=env)
+    
+    app.logger.info(f'LibreOffice stdout: {result.stdout}')
+    app.logger.info(f'LibreOffice stderr: {result.stderr}')
     
     # LibreOffice çıktı dosyasını bul
     giris_adi = os.path.splitext(giris)[0]
@@ -290,16 +299,28 @@ def watermark():
         from PyPDF2 import PdfReader, PdfWriter
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import A4
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
         import io
+
+        # Türkçe karakter desteği için sistem fontu kullan
+        try:
+            pdfmetrics.registerFont(TTFont('DejaVu', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
+            font_name = 'DejaVu'
+        except:
+            font_name = 'Helvetica'
+
         reader = PdfReader(giris)
         writer = PdfWriter()
         for sayfa in reader.pages:
             packet = io.BytesIO()
-            c = canvas.Canvas(packet, pagesize=A4)
-            c.setFont("Helvetica", 40)
+            w = float(sayfa.mediabox.width)
+            h = float(sayfa.mediabox.height)
+            c = canvas.Canvas(packet, pagesize=(w, h))
+            c.setFont(font_name, 40)
             c.setFillColorRGB(0.7, 0.7, 0.7, alpha=0.3)
             c.saveState()
-            c.translate(300, 400)
+            c.translate(w/2, h/2)
             c.rotate(45)
             c.drawCentredString(0, 0, metin)
             c.restoreState()
