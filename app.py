@@ -434,25 +434,16 @@ def sign():
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'Dosya bulunamadı'}), 400
-        if 'signature' not in request.files:
-            return jsonify({'error': 'İmza bulunamadı'}), 400
 
         dosya = request.files['file']
-        imza_dosya = request.files['signature']
-
-        # İmza koordinatları ve sayfa bilgisi
-        import json
+        import json, base64
         imzalar = json.loads(request.form.get('signatures', '[]'))
 
         giris = benzersiz_dosya('.pdf')
-        imza_path = benzersiz_dosya('.png')
         cikis = benzersiz_dosya('.pdf')
-
         dosya.save(giris)
-        imza_dosya.save(imza_path)
 
-        import fitz  # PyMuPDF
-        from PIL import Image
+        import fitz
 
         doc = fitz.open(giris)
 
@@ -460,18 +451,27 @@ def sign():
             sayfa_no = int(imza_bilgi.get('page', 0))
             x = float(imza_bilgi.get('x', 0))
             y = float(imza_bilgi.get('y', 0))
-            genislik = float(imza_bilgi.get('width', 150))
-            yukseklik = float(imza_bilgi.get('height', 60))
+            genislik = float(imza_bilgi.get('width', 0.2))
+            yukseklik = float(imza_bilgi.get('height', 0.08))
+            data_url = imza_bilgi.get('dataUrl', '')
 
             if sayfa_no >= len(doc):
                 continue
 
-            sayfa = doc[sayfa_no]
-            sayfa_yukseklik = float(sayfa.rect.height)
-            sayfa_genislik = float(sayfa.rect.width)
+            # dataUrl'den geçici imza dosyası oluştur
+            if ',' in data_url:
+                img_data = base64.b64decode(data_url.split(',')[1])
+            else:
+                continue
 
-            # Frontend'den gelen koordinatlar 0-1 arası oransal değerler
-            # Gerçek PDF koordinatlarına çevir
+            imza_path = benzersiz_dosya('.png')
+            with open(imza_path, 'wb') as f:
+                f.write(img_data)
+
+            sayfa = doc[sayfa_no]
+            sayfa_genislik = float(sayfa.rect.width)
+            sayfa_yukseklik = float(sayfa.rect.height)
+
             gercek_x = x * sayfa_genislik
             gercek_y = y * sayfa_yukseklik
             gercek_genislik = genislik * sayfa_genislik
@@ -479,12 +479,12 @@ def sign():
 
             rect = fitz.Rect(gercek_x, gercek_y, gercek_x + gercek_genislik, gercek_y + gercek_yukseklik)
             sayfa.insert_image(rect, filename=imza_path)
+            dosyayi_sil(imza_path)
 
         doc.save(cikis)
         doc.close()
 
         dosyayi_sil(giris)
-        dosyayi_sil(imza_path)
         dosyayi_sil(cikis)
 
         return send_file(cikis, as_attachment=True,
