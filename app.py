@@ -467,7 +467,17 @@ def sign():
                 continue
 
             sayfa = doc[sayfa_no]
-            rect = fitz.Rect(x, y, x + genislik, y + yukseklik)
+            sayfa_yukseklik = float(sayfa.rect.height)
+            sayfa_genislik = float(sayfa.rect.width)
+
+            # Frontend'den gelen koordinatlar 0-1 arası oransal değerler
+            # Gerçek PDF koordinatlarına çevir
+            gercek_x = x * sayfa_genislik
+            gercek_y = y * sayfa_yukseklik
+            gercek_genislik = genislik * sayfa_genislik
+            gercek_yukseklik = yukseklik * sayfa_yukseklik
+
+            rect = fitz.Rect(gercek_x, gercek_y, gercek_x + gercek_genislik, gercek_y + gercek_yukseklik)
             sayfa.insert_image(rect, filename=imza_path)
 
         doc.save(cikis)
