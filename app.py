@@ -436,7 +436,7 @@ def sign():
             return jsonify({'error': 'Dosya bulunamadı'}), 400
 
         dosya = request.files['file']
-        import json, base64
+        import json
         imzalar = json.loads(request.form.get('signatures', '[]'))
 
         giris = benzersiz_dosya('.pdf')
@@ -446,6 +446,7 @@ def sign():
         import fitz
 
         doc = fitz.open(giris)
+        imza_dosyalar = []
 
         for imza_bilgi in imzalar:
             sayfa_no = int(imza_bilgi.get('page', 0))
@@ -453,20 +454,20 @@ def sign():
             y = float(imza_bilgi.get('y', 0))
             genislik = float(imza_bilgi.get('width', 0.2))
             yukseklik = float(imza_bilgi.get('height', 0.08))
-            data_url = imza_bilgi.get('dataUrl', '')
+            img_index = int(imza_bilgi.get('imgIndex', 0))
 
             if sayfa_no >= len(doc):
                 continue
 
-            # dataUrl'den geçici imza dosyası oluştur
-            if ',' in data_url:
-                img_data = base64.b64decode(data_url.split(',')[1])
-            else:
+            # Her imzanın kendi görsel dosyasını al
+            field_name = 'sig_' + str(img_index)
+            if field_name not in request.files:
                 continue
 
+            imza_dosya = request.files[field_name]
             imza_path = benzersiz_dosya('.png')
-            with open(imza_path, 'wb') as f:
-                f.write(img_data)
+            imza_dosya.save(imza_path)
+            imza_dosyalar.append(imza_path)
 
             sayfa = doc[sayfa_no]
             sayfa_genislik = float(sayfa.rect.width)
@@ -479,13 +480,14 @@ def sign():
 
             rect = fitz.Rect(gercek_x, gercek_y, gercek_x + gercek_genislik, gercek_y + gercek_yukseklik)
             sayfa.insert_image(rect, filename=imza_path)
-            dosyayi_sil(imza_path)
 
         doc.save(cikis)
         doc.close()
 
         dosyayi_sil(giris)
         dosyayi_sil(cikis)
+        for f in imza_dosyalar:
+            dosyayi_sil(f)
 
         return send_file(cikis, as_attachment=True,
                         download_name='imzali.pdf',
