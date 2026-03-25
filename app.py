@@ -428,6 +428,62 @@ def pagenumber():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── PDF İmzala ───────────────────────────────────────────────
+@app.route('/api/sign', methods=['POST'])
+def sign():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        if 'signature' not in request.files:
+            return jsonify({'error': 'İmza bulunamadı'}), 400
+
+        dosya = request.files['file']
+        imza_dosya = request.files['signature']
+
+        # İmza koordinatları ve sayfa bilgisi
+        import json
+        imzalar = json.loads(request.form.get('signatures', '[]'))
+
+        giris = benzersiz_dosya('.pdf')
+        imza_path = benzersiz_dosya('.png')
+        cikis = benzersiz_dosya('.pdf')
+
+        dosya.save(giris)
+        imza_dosya.save(imza_path)
+
+        import fitz  # PyMuPDF
+        from PIL import Image
+
+        doc = fitz.open(giris)
+
+        for imza_bilgi in imzalar:
+            sayfa_no = int(imza_bilgi.get('page', 0))
+            x = float(imza_bilgi.get('x', 0))
+            y = float(imza_bilgi.get('y', 0))
+            genislik = float(imza_bilgi.get('width', 150))
+            yukseklik = float(imza_bilgi.get('height', 60))
+
+            if sayfa_no >= len(doc):
+                continue
+
+            sayfa = doc[sayfa_no]
+            rect = fitz.Rect(x, y, x + genislik, y + yukseklik)
+            sayfa.insert_image(rect, filename=imza_path)
+
+        doc.save(cikis)
+        doc.close()
+
+        dosyayi_sil(giris)
+        dosyayi_sil(imza_path)
+        dosyayi_sil(cikis)
+
+        return send_file(cikis, as_attachment=True,
+                        download_name='imzali.pdf',
+                        mimetype='application/pdf')
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 # ── Sağlık Kontrolü ─────────────────────────────────────────
 @app.route('/api/health', methods=['GET'])
 def health():
