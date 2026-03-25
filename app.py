@@ -496,6 +496,54 @@ def sign():
         app.logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+# ── PDF Sayfa Sil ────────────────────────────────────────────
+@app.route('/api/deletepage', methods=['POST'])
+def deletepage():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        sayfalar_str = request.form.get('sayfalar', '')
+        if not sayfalar_str.strip():
+            return jsonify({'error': 'Sayfa numarası girilmedi'}), 400
+
+        # Sayfa numaralarını parse et (1'den başlayan, 0'a çeviriyoruz)
+        try:
+            silinecek = [int(s.strip()) - 1 for s in sayfalar_str.split(',') if s.strip().isdigit()]
+        except:
+            return jsonify({'error': 'Geçersiz sayfa numarası formatı'}), 400
+
+        if not silinecek:
+            return jsonify({'error': 'Geçerli sayfa numarası bulunamadı'}), 400
+
+        giris = benzersiz_dosya('.pdf')
+        cikis = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+
+        from PyPDF2 import PdfReader, PdfWriter
+        reader = PdfReader(giris)
+        toplam = len(reader.pages)
+        writer = PdfWriter()
+
+        for i, sayfa in enumerate(reader.pages):
+            if i not in silinecek:
+                writer.add_page(sayfa)
+
+        if len(writer.pages) == 0:
+            return jsonify({'error': 'Tüm sayfalar silinirse PDF boş kalır'}), 400
+
+        with open(cikis, 'wb') as f:
+            writer.write(f)
+
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True,
+                        download_name='duzenlenmis.pdf',
+                        mimetype='application/pdf')
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 # ── Sağlık Kontrolü ─────────────────────────────────────────
 @app.route('/api/health', methods=['GET'])
 def health():
