@@ -436,7 +436,7 @@ def sign():
             return jsonify({'error': 'Dosya bulunamadı'}), 400
 
         dosya = request.files['file']
-        import json, base64, io
+        import json, io
         from PyPDF2 import PdfReader, PdfWriter
         from reportlab.pdfgen import canvas as rl_canvas
         from reportlab.lib.utils import ImageReader
@@ -451,67 +451,61 @@ def sign():
         reader = PdfReader(giris)
         writer = PdfWriter()
 
-        # Önce tüm sayfaları writer'a ekle
-        for sayfa in reader.pages:
-            writer.add_page(sayfa)
-
-        imza_dosyalar = []
-
-        for imza_bilgi in imzalar:
-            sayfa_no = int(imza_bilgi.get('page', 0))
-            x_oran = float(imza_bilgi.get('x', 0))
-            y_oran = float(imza_bilgi.get('y', 0))
-            w_oran = float(imza_bilgi.get('width', 0.2))
-            h_oran = float(imza_bilgi.get('height', 0.08))
-            img_index = int(imza_bilgi.get('imgIndex', 0))
-
-            if sayfa_no >= len(writer.pages):
-                continue
-
-            field_name = 'sig_' + str(img_index)
-            if field_name not in request.files:
-                continue
-
-            imza_dosya = request.files[field_name]
-            imza_path = benzersiz_dosya('.png')
-            imza_dosya.save(imza_path)
-            imza_dosyalar.append(imza_path)
-
-            # Sayfa boyutunu al
-            sayfa = writer.pages[sayfa_no]
+        # Her sayfayı işle
+        for sayfa_no, sayfa in enumerate(reader.pages):
             sayfa_genislik = float(sayfa.mediabox.width)
             sayfa_yukseklik = float(sayfa.mediabox.height)
 
-            # Oransal koordinatları gerçek PDF koordinatlarına çevir
-            gercek_x = x_oran * sayfa_genislik
-            gercek_w = w_oran * sayfa_genislik
-            gercek_h = h_oran * sayfa_yukseklik
-            # PDF koordinat sistemi: y aşağıdan yukarı
-            gercek_y = sayfa_yukseklik - (y_oran * sayfa_yukseklik) - gercek_h
+            # Bu sayfaya ait imzaları bul
+            bu_sayfa_imzalari = [s for s in imzalar if int(s.get('page', 0)) == sayfa_no]
 
-            # reportlab ile imza katmanı oluştur
-            packet = io.BytesIO()
-            c = rl_canvas.Canvas(packet, pagesize=(sayfa_genislik, sayfa_yukseklik))
+            if bu_sayfa_imzalari:
+                # Bu sayfa için imza katmanı oluştur
+                packet = io.BytesIO()
+                c = rl_canvas.Canvas(packet, pagesize=(sayfa_genislik, sayfa_yukseklik))
 
-            # PNG imzayı şeffaf arka planla çiz
-            img = Image.open(imza_path).convert('RGBA')
-            img_reader = ImageReader(img)
-            c.drawImage(img_reader, gercek_x, gercek_y, width=gercek_w, height=gercek_h, mask='auto')
-            c.save()
-            packet.seek(0)
+                for imza_bilgi in bu_sayfa_imzalari:
+                    x_oran = float(imza_bilgi.get('x', 0))
+                    y_oran = float(imza_bilgi.get('y', 0))
+                    w_oran = float(imza_bilgi.get('width', 0.2))
+                    h_oran = float(imza_bilgi.get('height', 0.08))
+                    img_index = int(imza_bilgi.get('imgIndex', 0))
 
-            # İmza katmanını PDF sayfasıyla birleştir
-            imza_pdf = PdfReader(packet)
-            sayfa.merge_page(imza_pdf.pages[0])
+                    field_name = 'sig_' + str(img_index)
+                    if field_name not in request.files:
+                        continue
 
-        # Sonucu kaydet
+                    imza_dosya_obj = request.files[field_name]
+                    imza_path = benzersiz_dosya('.png')
+                    imza_dosya_obj.save(imza_path)
+
+                    # Koordinat dönüşümü
+                    gercek_x = x_oran * sayfa_genislik
+                    gercek_w = w_oran * sayfa_genislik
+                    gercek_h = h_oran * sayfa_yukseklik
+                    # reportlab: y aşağıdan yukarı başlar
+                    gercek_y = sayfa_yukseklik - (y_oran * sayfa_yukseklik) - gercek_h
+
+                    img = Image.open(imza_path).convert('RGBA')
+                    img_reader = ImageReader(img)
+                    c.drawImage(img_reader, gercek_x, gercek_y,
+                               width=gercek_w, height=gercek_h, mask='auto')
+                    dosyayi_sil(imza_path)
+
+                c.save()
+                packet.seek(0)
+
+                # İmza katmanını mevcut sayfayla birleştir
+                imza_katmani = PdfReader(packet).pages[0]
+                sayfa.merge_page(imza_katmani)
+
+            writer.add_page(sayfa)
+
         with open(cikis, 'wb') as f:
             writer.write(f)
 
         dosyayi_sil(giris)
         dosyayi_sil(cikis)
-        for f in imza_dosyalar:
-            dosyayi_sil(f)
 
         return send_file(cikis, as_attachment=True,
                         download_name='imzali.pdf',
