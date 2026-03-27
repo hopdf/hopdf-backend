@@ -436,30 +436,38 @@ def sign():
             return jsonify({'error': 'Dosya bulunamadı'}), 400
 
         dosya = request.files['file']
-        import json
+        import json, base64, io
+        from PyPDF2 import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib.utils import ImageReader
+        from PIL import Image
+
         imzalar = json.loads(request.form.get('signatures', '[]'))
 
         giris = benzersiz_dosya('.pdf')
         cikis = benzersiz_dosya('.pdf')
         dosya.save(giris)
 
-        import fitz
+        reader = PdfReader(giris)
+        writer = PdfWriter()
 
-        doc = fitz.open(giris)
+        # Önce tüm sayfaları writer'a ekle
+        for sayfa in reader.pages:
+            writer.add_page(sayfa)
+
         imza_dosyalar = []
 
         for imza_bilgi in imzalar:
             sayfa_no = int(imza_bilgi.get('page', 0))
-            x = float(imza_bilgi.get('x', 0))
-            y = float(imza_bilgi.get('y', 0))
-            genislik = float(imza_bilgi.get('width', 0.2))
-            yukseklik = float(imza_bilgi.get('height', 0.08))
+            x_oran = float(imza_bilgi.get('x', 0))
+            y_oran = float(imza_bilgi.get('y', 0))
+            w_oran = float(imza_bilgi.get('width', 0.2))
+            h_oran = float(imza_bilgi.get('height', 0.08))
             img_index = int(imza_bilgi.get('imgIndex', 0))
 
-            if sayfa_no >= len(doc):
+            if sayfa_no >= len(writer.pages):
                 continue
 
-            # Her imzanın kendi görsel dosyasını al
             field_name = 'sig_' + str(img_index)
             if field_name not in request.files:
                 continue
@@ -469,20 +477,36 @@ def sign():
             imza_dosya.save(imza_path)
             imza_dosyalar.append(imza_path)
 
-            sayfa = doc[sayfa_no]
-            sayfa_genislik = float(sayfa.rect.width)
-            sayfa_yukseklik = float(sayfa.rect.height)
+            # Sayfa boyutunu al
+            sayfa = writer.pages[sayfa_no]
+            sayfa_genislik = float(sayfa.mediabox.width)
+            sayfa_yukseklik = float(sayfa.mediabox.height)
 
-            gercek_x = x * sayfa_genislik
-            gercek_y = y * sayfa_yukseklik
-            gercek_genislik = genislik * sayfa_genislik
-            gercek_yukseklik = yukseklik * sayfa_yukseklik
+            # Oransal koordinatları gerçek PDF koordinatlarına çevir
+            gercek_x = x_oran * sayfa_genislik
+            gercek_w = w_oran * sayfa_genislik
+            gercek_h = h_oran * sayfa_yukseklik
+            # PDF koordinat sistemi: y aşağıdan yukarı
+            gercek_y = sayfa_yukseklik - (y_oran * sayfa_yukseklik) - gercek_h
 
-            rect = fitz.Rect(gercek_x, gercek_y, gercek_x + gercek_genislik, gercek_y + gercek_yukseklik)
-            sayfa.insert_image(rect, filename=imza_path)
+            # reportlab ile imza katmanı oluştur
+            packet = io.BytesIO()
+            c = rl_canvas.Canvas(packet, pagesize=(sayfa_genislik, sayfa_yukseklik))
 
-        doc.save(cikis)
-        doc.close()
+            # PNG imzayı şeffaf arka planla çiz
+            img = Image.open(imza_path).convert('RGBA')
+            img_reader = ImageReader(img)
+            c.drawImage(img_reader, gercek_x, gercek_y, width=gercek_w, height=gercek_h, mask='auto')
+            c.save()
+            packet.seek(0)
+
+            # İmza katmanını PDF sayfasıyla birleştir
+            imza_pdf = PdfReader(packet)
+            sayfa.merge_page(imza_pdf.pages[0])
+
+        # Sonucu kaydet
+        with open(cikis, 'wb') as f:
+            writer.write(f)
 
         dosyayi_sil(giris)
         dosyayi_sil(cikis)
