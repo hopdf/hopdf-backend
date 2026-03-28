@@ -587,19 +587,20 @@ def extractpage():
         dosya.save(giris)
 
         from PyPDF2 import PdfReader, PdfWriter
-        reader = PdfReader(giris)
-        toplam = len(reader.pages)
-        writer = PdfWriter()
+        with open(giris, 'rb') as giris_f:
+            reader = PdfReader(giris_f)
+            toplam = len(reader.pages)
+            writer = PdfWriter()
 
-        for i in cikartilacak:
-            if 0 <= i < toplam:
-                writer.add_page(reader.pages[i])
+            for i in cikartilacak:
+                if 0 <= i < toplam:
+                    writer.add_page(reader.pages[i])
 
-        if len(writer.pages) == 0:
-            return jsonify({'error': 'Geçerli sayfa numarası bulunamadı. Dosyadaki toplam sayfa: ' + str(toplam)}), 400
+            if len(writer.pages) == 0:
+                return jsonify({'error': 'Geçerli sayfa numarası bulunamadı. Dosyadaki toplam sayfa: ' + str(toplam)}), 400
 
-        with open(cikis, 'wb') as f:
-            writer.write(f)
+            with open(cikis, 'wb') as f:
+                writer.write(f)
 
         dosyayi_sil(giris)
         dosyayi_sil(cikis)
