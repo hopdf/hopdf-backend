@@ -232,6 +232,66 @@ def jpg2pdf():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ── Çoklu Görsel → PDF ───────────────────────────────────────
+@app.route('/api/imgs2pdf', methods=['POST'])
+def imgs2pdf():
+    try:
+        import io
+        dosyalar = request.files.getlist('files')
+        if not dosyalar:
+            if 'file' in request.files:
+                dosyalar = [request.files['file']]
+            else:
+                return jsonify({'error': 'Dosya bulunamadı'}), 400
+
+        from PIL import Image
+        sayfalar = []
+        for dosya in dosyalar:
+            img_bytes = io.BytesIO(dosya.read())
+            img = Image.open(img_bytes).convert('RGB')
+            sayfalar.append(img)
+
+        if not sayfalar:
+            return jsonify({'error': 'Geçerli görsel bulunamadı'}), 400
+
+        cikis_bytes = io.BytesIO()
+        ilk = sayfalar[0]
+        diger = sayfalar[1:] if len(sayfalar) > 1 else []
+        ilk.save(cikis_bytes, format='PDF', save_all=True, append_images=diger)
+        cikis_bytes.seek(0)
+
+        return send_file(cikis_bytes, as_attachment=True,
+                        download_name='gorseller.pdf',
+                        mimetype='application/pdf')
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+# ── PDF → PNG ────────────────────────────────────────────────
+@app.route('/api/pdf2png', methods=['POST'])
+def pdf2png():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        giris = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+        from pdf2image import convert_from_path
+        import zipfile
+        sayfalar = convert_from_path(giris, dpi=150)
+        zip_path = benzersiz_dosya('.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for i, sayfa in enumerate(sayfalar):
+                png_path = benzersiz_dosya('.png')
+                sayfa.save(png_path, 'PNG')
+                zipf.write(png_path, f'sayfa_{i+1}.png')
+                dosyayi_sil(png_path)
+        dosyayi_sil(giris)
+        dosyayi_sil(zip_path)
+        return send_file(zip_path, as_attachment=True, download_name='sayfalar_png.zip', mimetype='application/zip')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # ── PDF Böl ──────────────────────────────────────────────────
 @app.route('/api/split', methods=['POST'])
 def split():
