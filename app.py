@@ -562,6 +562,54 @@ def deletepage():
         app.logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+# ── PDF Sayfa Çıkar ──────────────────────────────────────────
+@app.route('/api/extractpage', methods=['POST'])
+def extractpage():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        sayfalar_str = request.form.get('sayfalar', '')
+        if not sayfalar_str.strip():
+            return jsonify({'error': 'Sayfa numarası girilmedi'}), 400
+
+        # Sayfa numaralarını parse et (1'den başlayan, 0'a çeviriyoruz)
+        try:
+            cikartilacak = [int(s.strip()) - 1 for s in sayfalar_str.split(',') if s.strip().isdigit()]
+        except:
+            return jsonify({'error': 'Geçersiz sayfa numarası formatı'}), 400
+
+        if not cikartilacak:
+            return jsonify({'error': 'Geçerli sayfa numarası bulunamadı'}), 400
+
+        giris = benzersiz_dosya('.pdf')
+        cikis = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+
+        from PyPDF2 import PdfReader, PdfWriter
+        reader = PdfReader(giris)
+        toplam = len(reader.pages)
+        writer = PdfWriter()
+
+        for i in cikartilacak:
+            if 0 <= i < toplam:
+                writer.add_page(reader.pages[i])
+
+        if len(writer.pages) == 0:
+            return jsonify({'error': 'Geçerli sayfa numarası bulunamadı. Dosyadaki toplam sayfa: ' + str(toplam)}), 400
+
+        with open(cikis, 'wb') as f:
+            writer.write(f)
+
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True,
+                        download_name='cikartilan_sayfalar.pdf',
+                        mimetype='application/pdf')
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 # ── Sağlık Kontrolü ─────────────────────────────────────────
 @app.route('/api/health', methods=['GET'])
 def health():
