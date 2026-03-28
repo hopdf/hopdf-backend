@@ -566,6 +566,7 @@ def deletepage():
 @app.route('/api/extractpage', methods=['POST'])
 def extractpage():
     try:
+        import io
         if 'file' not in request.files:
             return jsonify({'error': 'Dosya bulunamadı'}), 400
         dosya = request.files['file']
@@ -573,7 +574,6 @@ def extractpage():
         if not sayfalar_str.strip():
             return jsonify({'error': 'Sayfa numarası girilmedi'}), 400
 
-        # Sayfa numaralarını parse et (1'den başlayan, 0'a çeviriyoruz)
         try:
             cikartilacak = [int(s.strip()) - 1 for s in sayfalar_str.split(',') if s.strip().isdigit()]
         except:
@@ -582,31 +582,32 @@ def extractpage():
         if not cikartilacak:
             return jsonify({'error': 'Geçerli sayfa numarası bulunamadı'}), 400
 
-        giris = benzersiz_dosya('.pdf')
-        cikis = benzersiz_dosya('.pdf')
-        dosya.save(giris)
+        # Yüklenen dosyayı belleğe oku
+        giris_bytes = io.BytesIO(dosya.read())
 
         from PyPDF2 import PdfReader, PdfWriter
-        with open(giris, 'rb') as giris_f:
-            reader = PdfReader(giris_f)
-            toplam = len(reader.pages)
-            writer = PdfWriter()
+        reader = PdfReader(giris_bytes)
+        toplam = len(reader.pages)
 
-            for i in cikartilacak:
-                if 0 <= i < toplam:
-                    writer.add_page(reader.pages[i])
+        writer = PdfWriter()
+        for i in cikartilacak:
+            if 0 <= i < toplam:
+                writer.add_page(reader.pages[i])
 
-            if len(writer.pages) == 0:
-                return jsonify({'error': 'Geçerli sayfa numarası bulunamadı. Dosyadaki toplam sayfa: ' + str(toplam)}), 400
+        if len(writer.pages) == 0:
+            return jsonify({'error': 'Geçerli sayfa numarası bulunamadı. Dosyadaki toplam sayfa: ' + str(toplam)}), 400
 
-            with open(cikis, 'wb') as f:
-                writer.write(f)
+        # Çıktıyı da belleğe yaz
+        cikis_bytes = io.BytesIO()
+        writer.write(cikis_bytes)
+        cikis_bytes.seek(0)
 
-        dosyayi_sil(giris)
-        dosyayi_sil(cikis)
-        return send_file(cikis, as_attachment=True,
-                        download_name='cikartilan_sayfalar.pdf',
-                        mimetype='application/pdf')
+        return send_file(
+            cikis_bytes,
+            as_attachment=True,
+            download_name='cikartilan_sayfalar.pdf',
+            mimetype='application/pdf'
+        )
     except Exception as e:
         app.logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
