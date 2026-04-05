@@ -191,16 +191,26 @@ def compress():
 @app.route('/api/pdf2excel', methods=['POST'])
 def pdf2excel():
     try:
-        import io
         if 'file' not in request.files:
             return jsonify({'error': 'Dosya bulunamadı'}), 400
         dosya = request.files['file']
         giris = benzersiz_dosya('.pdf')
-        cikis = benzersiz_dosya('.xlsx')
         dosya.save(giris)
-        cikis = libreoffice_donustur(giris, 'xlsx', '.xlsx')
+
+        # Önce PDF → Word, sonra Word → Excel (LibreOffice)
+        docx_path = benzersiz_dosya('.docx')
+        from pdf2docx import Converter
+        cv = Converter(giris)
+        cv.convert(docx_path)
+        cv.close()
+
+        # Word → Excel (LibreOffice)
+        cikis = libreoffice_donustur(docx_path, 'xlsx', '.xlsx')
+
         dosyayi_sil(giris)
+        dosyayi_sil(docx_path)
         dosyayi_sil(cikis)
+
         return send_file(cikis, as_attachment=True,
                         download_name=dosya.filename.rsplit('.',1)[0]+'.xlsx',
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
