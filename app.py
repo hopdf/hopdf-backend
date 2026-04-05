@@ -191,27 +191,40 @@ def compress():
 @app.route('/api/pdf2excel', methods=['POST'])
 def pdf2excel():
     try:
+        import io
+        from PyPDF2 import PdfReader
+        from openpyxl import Workbook
+
         if 'file' not in request.files:
             return jsonify({'error': 'Dosya bulunamadı'}), 400
+
         dosya = request.files['file']
-        giris = benzersiz_dosya('.pdf')
-        dosya.save(giris)
+        giris_bytes = io.BytesIO(dosya.read())
 
-        # Önce PDF → Word
-        docx_path = benzersiz_dosya('.docx')
-        from pdf2docx import Converter
-        cv = Converter(giris)
-        cv.convert(docx_path)
-        cv.close()
+        # PDF'den metin çek
+        reader = PdfReader(giris_bytes)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'PDF İçeriği'
 
-        # Word → Excel (LibreOffice - doğru format kodu)
-        cikis = libreoffice_donustur(docx_path, 'calc_MS_Excel_2007_XML', '.xlsx')
+        satir = 1
+        for i, sayfa in enumerate(reader.pages):
+            metin = sayfa.extract_text()
+            if metin:
+                if i > 0:
+                    ws.cell(row=satir, column=1, value=f'--- Sayfa {i+1} ---')
+                    satir += 1
+                for line in metin.split('\n'):
+                    line = line.strip()
+                    if line:
+                        ws.cell(row=satir, column=1, value=line)
+                        satir += 1
 
-        dosyayi_sil(giris)
-        dosyayi_sil(docx_path)
-        dosyayi_sil(cikis)
+        cikis_bytes = io.BytesIO()
+        wb.save(cikis_bytes)
+        cikis_bytes.seek(0)
 
-        return send_file(cikis, as_attachment=True,
+        return send_file(cikis_bytes, as_attachment=True,
                         download_name=dosya.filename.rsplit('.',1)[0]+'.xlsx',
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     except Exception as e:
