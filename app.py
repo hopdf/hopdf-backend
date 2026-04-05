@@ -212,14 +212,45 @@ def pdf2excel():
 @app.route('/api/pdf2ppt', methods=['POST'])
 def pdf2ppt():
     try:
+        import io
+        from pdf2image import convert_from_path
+        from pptx import Presentation
+        from pptx.util import Inches, Pt
+        from PIL import Image
+
         if 'file' not in request.files:
             return jsonify({'error': 'Dosya bulunamadı'}), 400
+
         dosya = request.files['file']
         giris = benzersiz_dosya('.pdf')
         dosya.save(giris)
-        cikis = libreoffice_donustur(giris, 'pptx', '.pptx')
+
+        # PDF sayfalarını görsel olarak al
+        sayfalar = convert_from_path(giris, dpi=150)
+
+        # PowerPoint oluştur
+        prs = Presentation()
+        prs.slide_width = Inches(10)
+        prs.slide_height = Inches(7.5)
+
+        blank_layout = prs.slide_layouts[6]  # Blank layout
+
+        for i, sayfa in enumerate(sayfalar):
+            slide = prs.slides.add_slide(blank_layout)
+
+            # Görseli geçici dosyaya kaydet
+            img_path = benzersiz_dosya('.jpg')
+            sayfa.save(img_path, 'JPEG', quality=90)
+
+            # Slayta ekle - tam ekran
+            slide.shapes.add_picture(img_path, 0, 0, prs.slide_width, prs.slide_height)
+            dosyayi_sil(img_path)
+
+        cikis = benzersiz_dosya('.pptx')
+        prs.save(cikis)
         dosyayi_sil(giris)
         dosyayi_sil(cikis)
+
         return send_file(cikis, as_attachment=True,
                         download_name=dosya.filename.rsplit('.',1)[0]+'.pptx',
                         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
