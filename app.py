@@ -186,6 +186,47 @@ def compress():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+# ── PDF → Excel ──────────────────────────────────────────────
+@app.route('/api/pdf2excel', methods=['POST'])
+def pdf2excel():
+    try:
+        import io
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        giris = benzersiz_dosya('.pdf')
+        cikis = benzersiz_dosya('.xlsx')
+        dosya.save(giris)
+        cikis = libreoffice_donustur(giris, 'xlsx', '.xlsx')
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True,
+                        download_name=dosya.filename.rsplit('.',1)[0]+'.xlsx',
+                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+# ── PDF → PowerPoint ─────────────────────────────────────────
+@app.route('/api/pdf2ppt', methods=['POST'])
+def pdf2ppt():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Dosya bulunamadı'}), 400
+        dosya = request.files['file']
+        giris = benzersiz_dosya('.pdf')
+        dosya.save(giris)
+        cikis = libreoffice_donustur(giris, 'pptx', '.pptx')
+        dosyayi_sil(giris)
+        dosyayi_sil(cikis)
+        return send_file(cikis, as_attachment=True,
+                        download_name=dosya.filename.rsplit('.',1)[0]+'.pptx',
+                        mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+    except Exception as e:
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 # ── PDF → JPG ────────────────────────────────────────────────
 @app.route('/api/pdf2jpg', methods=['POST'])
 def pdf2jpg():
