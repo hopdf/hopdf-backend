@@ -197,15 +197,15 @@ def pdf2excel():
         giris = benzersiz_dosya('.pdf')
         dosya.save(giris)
 
-        # Önce PDF → Word, sonra Word → Excel (LibreOffice)
+        # Önce PDF → Word
         docx_path = benzersiz_dosya('.docx')
         from pdf2docx import Converter
         cv = Converter(giris)
         cv.convert(docx_path)
         cv.close()
 
-        # Word → Excel (LibreOffice)
-        cikis = libreoffice_donustur(docx_path, 'xlsx', '.xlsx')
+        # Word → Excel (LibreOffice - doğru format kodu)
+        cikis = libreoffice_donustur(docx_path, 'calc_MS_Excel_2007_XML', '.xlsx')
 
         dosyayi_sil(giris)
         dosyayi_sil(docx_path)
