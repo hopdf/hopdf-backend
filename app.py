@@ -11,6 +11,7 @@ import subprocess
 
 app = Flask(__name__)
 CORS(app)
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB
 
 UPLOAD_FOLDER = tempfile.gettempdir()
 
